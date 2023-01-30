@@ -30,3 +30,9 @@ class Polygon:
             self.compute_angle(prev_edge[0] - prev_edge[1], edge[1] - edge[0])
 
         return
+
+    def get_vert_index(self, vert):
+        for i, v in enumerate(self.vertices):
+            if vert[0] == v[0] and vert[1] == v[1]:
+                return i
+        return False

@@ -6,6 +6,8 @@ from polygon import Polygon
 
 #computes the max height possible in order to achive a minmal given spatial resolution
 #spatial resolution in mm(5-7mm are common)
+
+
 def compute_max_height(resolution, spatial_resolution, angle_of_view)->float:
     max_height = resolution[0] / (2*spatial_resolution * np.tan(angle_of_view/2))
     return max_height
@@ -33,16 +35,37 @@ def get_longest_edge(edges, vertices):
 def get_scan_direction(longest_edge, vertices, edges)->np.array:
     return vertices[edges[longest_edge][1]] - vertices[edges[longest_edge][0]]
 
+def get_camera_boarder(point, projected_area, up_direction, scan_direction):
+    camera_edges = [[point + (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction, 
+        point + (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction],
+        [point + (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction,
+        point - (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction],
+        [point - (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction,
+        point + (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction],
+        [point - (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction,
+        point - (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction]]
+    
+    return camera_edges
+
+def get_upper_camera_boarder(point, projected_area, up_direction, scan_direction):
+    edge = [point + (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction, 
+        point + (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction]
+    
+    return edge
+
 #find the vertex that has the longest distance to the longest bounding edge and compute the distance
 def get_longest_distance(vertices, edge, edges):
     longest_distance = 0
     v1 = vertices[edges[edge][0]]
     v2 = vertices[edges[edge][1]]
+    vert_l = copy.deepcopy(v1)
     for vert in vertices:
         distance = np.abs((v2[0]-v1[0])*(v1[1]-vert[1])- (v1[0]-vert[0])*(v2[1]-v1[1]))/np.linalg.norm(v2-v1)
         if distance > longest_distance:
             longest_distance = distance
-            
+            vert_l = vert
+    print(vert_l)
+    print(longest_distance)
     return longest_distance
 
 #get intercection of two lines represnted by two points
@@ -78,24 +101,30 @@ def intersect(e1, e2):
     return np.array([x, y])
 
 #get involved edge and boarder intersection
-def update_boarder_points(area : Polygon, current_edge, index, point, scan_direction, up_direction, projected_area):
-    cameera_edges = [[point + (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction, 
-        point + (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction],
-        [point + (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction,
-        point - (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction],
-        [point - (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction,
-        point + (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction],
-        [point - (projected_area[0]/2) * up_direction - (projected_area[1]/2)*scan_direction,
-        point - (projected_area[0]/2) * up_direction + (projected_area[1]/2)*scan_direction]]
+def update_boarder_points(area : Polygon, current_edge, index, camera_edges):
 
-    for edge1 in cameera_edges:
+    for edge1 in camera_edges:
         for edge in area.edges:
             edge2 = [area.vertices[edge[0]], area.vertices[edge[1]]]
             intersection_point = intersect(edge1, edge2)
             if intersection_point[0] != None:
-                current_edge[index] = edge
+                current_edge[index] = copy.deepcopy(edge)
                 return intersection_point
     return False
+
+def update_vertices(current_edges, current_vertices, area : Polygon):
+    current_vertices[0] = current_edges[0][1]
+    current_vertices[1] = current_edges[1][0]
+    return 
+
+def update_angles(current_angles, current_edges, area : Polygon, direction):
+   v1 = area.vertices[current_edges[0][0]]-area.vertices[current_edges[0][1]]
+   v2 = direction
+   current_angles[0] = np.arccos(np.dot(v1, v2)/(np.linalg.norm(v1)*np.linalg.norm(v2)))
+   v1 = area.vertices[current_edges[1][1]]-area.vertices[current_edges[1][0]]
+   v2 = -1*direction
+   current_angles[1] = np.arccos(np.dot(v1, v2)/(np.linalg.norm(v1)*np.linalg.norm(v2)))
+   return
 
 #overlap: amount of overlap ranging from 0-1
 def path_planning(area : Polygon, spatial_resolution : float, resolution, angle_of_view : float, overlap : float):
@@ -114,51 +143,61 @@ def path_planning(area : Polygon, spatial_resolution : float, resolution, angle_
     d_y = projected_area[1]*(1-overlap)
 
     number_of_stripes = int(np.ceil(longest_distance/d_x))
-    if number_of_stripes%2 != 0:
-        number_of_stripes += 1
-    
-    current_egeds = [longest_edge-1, longest_edge+1]
+ #   if (number_of_stripes % 2) != 0:
+ #       number_of_stripes += 1
+    current_egeds = [(longest_edge-1)%len(area.edges), (longest_edge+1)%len(area.edges)]
     current_vertices = [area.edges[current_egeds[0]][1], area.edges[current_egeds[1]][0]]
+    current_egeds = [area.edges[current_egeds[0]], area.edges[current_egeds[1]]]
     current_angles = [area.angles[current_vertices[0]], area.angles[current_vertices[1]]]
     boarder_points = [copy.deepcopy(area.vertices[current_vertices[0]]), copy.deepcopy(area.vertices[current_vertices[1]])]
     up_shift = up_direction_normed * (projected_area[0]/2)
     x_overlap = 0.0
      #distance between stripes
     delta_x = (longest_distance - projected_area[0])/(number_of_stripes-1)
-
+    delta_x = d_x
+    start_index = 0
+    stop_index = 1
     for stripe in range(number_of_stripes):
-        start_index = 0
-        stop_index = 1
 
         point_shift = 0.0
         stripe_length = np.linalg.norm(boarder_points[1]-boarder_points[0])
-
 
         if current_angles[start_index] > np.pi/2:
             stripe_length += (1/np.tan(np.pi-current_angles[start_index])) * (projected_area[0]-x_overlap)
             point_shift = (1/np.tan(np.pi-current_angles[start_index])) * (projected_area[0]-x_overlap) * (-1*scan_direction_normed)
         if current_angles[stop_index] > np.pi/2:
             stripe_length += 1/np.tan(np.pi-current_angles[stop_index]) * projected_area[0]
-
+        
         number_of_waypoints = int(np.ceil(stripe_length/d_y))
         #distance between waypoints
         delta_y = (stripe_length-projected_area[1])/(number_of_waypoints-1)
 
         x_overlap = d_x-delta_x
-
         way_point = boarder_points[start_index] + point_shift + (scan_direction_normed*(projected_area[1]/2)) + up_shift
         way_points.append(copy.deepcopy(way_point))
-        boarder_points[start_index] = update_boarder_points(area, current_egeds, start_index, way_point, scan_direction_normed, up_direction_normed, projected_area) + (-1*up_direction_normed * projected_area[0]/2)
+        boarder_points[start_index] = update_boarder_points(area, current_egeds, start_index, get_camera_boarder(way_point, projected_area, up_direction_normed, scan_direction_normed)) + (-1*up_direction_normed * projected_area[0]/2)
+        update_boarder = False
+        if intersect(get_upper_camera_boarder(way_point, projected_area, up_direction_normed, scan_direction_normed), [area.vertices[current_egeds[start_index][0]], area.vertices[current_egeds[start_index][1]]])[0] == None:
+            update_boarder = True
         for i in range(number_of_waypoints-1):
             way_point += scan_direction_normed * delta_y
             way_points.append(copy.deepcopy(way_point))
-        
-        boarder_points[stop_index] = update_boarder_points(area, current_egeds, stop_index, way_point, scan_direction_normed, up_direction_normed, projected_area) + (-1*up_direction_normed * projected_area[0]/2)
-        scan_direction = scan_direction * (-1)
-        start_index = stop_index
+            if update_boarder:
+                camera_boarder = get_upper_camera_boarder(way_point, projected_area, up_direction_normed, scan_direction_normed)
+                for edge in area.edges: 
+                    intersection_point = intersect(camera_boarder, [area.vertices[edge[0]], area.vertices[edge[1]]])
+                    if intersection_point[0] != None:
+                        boarder_points[start_index] = update_boarder_points(area, current_egeds, start_index, [camera_boarder])
+                        update_boarder = False
+        boarder_points[stop_index] = update_boarder_points(area, current_egeds, stop_index, get_camera_boarder(way_point, projected_area, up_direction_normed, scan_direction_normed)) + (-1*up_direction_normed * projected_area[0]/2)
+        scan_direction_normed = scan_direction_normed * (-1)
+        update_vertices(current_egeds, current_vertices, area)
+        update_angles(current_angles, current_egeds, area, scan_direction)
+        tmp = stop_index
         stop_index = start_index
+        start_index = tmp
         up_shift = up_direction_normed *delta_x
- #       up_shift = up_direction_normed * d_x
+
 
     visualize_path.draw_path(area, way_points, projected_area, scan_direction_normed, up_direction_normed)
     return way_points
