@@ -7,8 +7,10 @@ import time
 
 
 def main(edges_server) -> int:
+    print("edges server: ", edges_server)
     edges = [(np.array([500, 200]), np.array([900, 250])), (np.array([900, 250]), np.array([940, 550])), (np.array([940, 550]), np.array([750, 650])),
     (np.array([750, 650]), np.array([450, 550])), (np.array([450, 550]), np.array([500, 200]))]
+    print("edges: ", edges)
     edges2 = [(np.array([300, 200]), np.array([1100, 300])), (np.array([1100, 300]), np.array([900, 1000])),
     (np.array([900, 1000]), np.array([200, 1150])), (np.array([200, 1150]), np.array([300, 200]))]
     area = Polygon(edges_server)
@@ -31,7 +33,7 @@ class MyServer(BaseHTTPRequestHandler):
         for ele in temp:
             el1, el2 = ele.split(";")
             print(el1, el2)
-            coords.append((np.array([float(el1) * 10, float(el2) * 10])))
+            coords.append((np.array([int(el1)*5, int(el2)*5])))
         edges = []
         for i in range(len(coords)):
             edges.append((coords[i], coords[(i+1) % len(coords)]))
